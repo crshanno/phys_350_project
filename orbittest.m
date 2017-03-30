@@ -11,11 +11,11 @@ function orbittest(ellipticaltest, N)
     end
     
     % number of orbits to compute
-    nOrbits = 1;
+    nOrbits = 10;
     
     % time scale resolution (seconds)
     % ie. how many seconds in between iterations
-    time_resolution = 100;
+    time_resolution = 10;
     
 
     function r = myRandn(min, max, dev)

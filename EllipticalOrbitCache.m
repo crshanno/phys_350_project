@@ -11,15 +11,15 @@ classdef EllipticalOrbit < Orbit
 
         % cache the last computed E value so it doesn't have to be
         % re-computed for the same t sequentially
-        last_t
-        last_E
+        last_t;
+        last_E;
         
         % If there is a t within t_diff cached, then it will be used to
         % generate E.
-        t_diff = 10
+        t_diff = 10;
         
         % Object stores a list of E(t) that can be reused in the future. 
-        E_t
+        E_t;
    
     end
     
@@ -101,23 +101,23 @@ classdef EllipticalOrbit < Orbit
             function F = ef(x)
                F = x - obj.epsilon*sin(x) - m;
             end
-%             t_round = round(mod(t,obj.P)/obj.t_diff) + 1
-%             
-%             try
-%             E_cache = obj.E_t(t_round);
-%             catch
-%             E_cache = 0;
-%             end
+            t_round = round(mod(t,obj.P)/obj.t_diff) + 1
             
-%             if t == obj.last_t
-%                 E = obj.last_E;
-%             elseif E_cache ~= 0
-%                 E = E_cache;    
-%             else 
+            try
+            E_cache = obj.E_t(t_round);
+            catch
+            E_cache = 0;
+            end
+            
+            if t == obj.last_t
+                E = obj.last_E;
+            elseif E_cache ~= 0
+               E = E_cache    
+            else 
                 eqn = @ef;
                 E = fzero(eqn, 0);
-%                obj.E_t(t_round) = E;
-%             end
+                obj.E_t(t_round) = E;
+            end
             
             obj.last_t = t;
             obj.last_E = E;
