@@ -67,12 +67,14 @@ class CollisionObject:
         self.t0 = rrange(0,self.P)     
         self.a = pow((G*Mearth)*pow(self.P,2)/(4*math.pi*math.pi),(1/3))
         
-        print(self.P,self.e,self.alpha0,self.phi,self.t0,self.a)
-        
-        self.getCartLoc()
-        
-        self.createOrbit()
-        print(self.P,self.e,self.alpha0,self.phi,self.t0,self.a)
+#        print("start")
+#        print(self.P,self.e,self.alpha0,self.phi,self.t0,self.a)
+#        
+#        self.getCartLoc()
+#        
+#        self.createOrbit()
+#        print("end")
+#        print(self.P,self.e,self.alpha0,self.phi,self.t0,self.a)
 
     def createOrbit(self):
         v = self.vel
@@ -87,12 +89,12 @@ class CollisionObject:
         v2 = pow(v[0],2) + pow(v[1],2) + pow(v[2],2)
         w2 = r2*v2
         
-        print(rMag,math.sqrt(v2))
+       # print(rMag,math.sqrt(v2))
 
         EperM = v2/2 - G*Mearth/rMag
         
-        print(EperM)
-        print(pow(G*Mearth,2)/2*w2)
+       # print(EperM)
+       # print(pow(G*Mearth,2)/2*w2)
         
         self.e = math.sqrt(EperM*2*w2/pow(G*Mearth,2) + 1) #eccentricity
 
@@ -327,10 +329,10 @@ def frame_change_handler(scene):
     deli = []
     delk = []
     # very inefficient N^N collision checking
-    for i in range(len(cb)):
-       for k in range(len(cb)-i):
-          if i != k:
-             checkCollision(cb[i], cb[k])
+#    for i in range(len(cb)):
+#       for k in range(len(cb)-i):
+#          if i != k:
+#             checkCollision(cb[i], cb[k])
                         
     last_frame = frame
 
