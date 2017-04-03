@@ -6,7 +6,7 @@ import time
 #import matplotlib.pyplot as plt
 #from scipy.optimize import fsolve
 
-G = 6.67408*math.pow(10, -20) #km^3kg^-1s^-2 (Gravitational constant)
+G = 6.67408*math.pow(10, -11) #m^3kg^-1s^-2 (Gravitational constant)
 Mearth = 5.972*math.pow(10, 24) #kg (mass of earth)
 
 Re = 6371 #km (radius of earth)
@@ -20,17 +20,29 @@ rstart = 1
 pLow = 88*60
 pHigh = 127*60
 
+nMin = 4
+nMax = 10
+
+massMin = 1000 #kg
+massMax = 10000 #kg
+
+sizeScale = 100000 #scale down linear distances
+
+collideScale = 100000 #scales likelyhood of collisions
+
+
 def rrange(min, max):
     return random.random()*(max-min)+min
 
 class CollisionObject:
     mesh = None
     object = None
-    velocity = (0, 0, 0)
+    vel = (0, 0, 0)
     loc = (0, 0, 0)
     spawned = False
     hidden = False    
     immune = 0
+    mass = 0
 
     theta = 0
     phi = 0
@@ -43,48 +55,75 @@ class CollisionObject:
 
     t = 0
     
-    def __init__(self, loc=(None, None, None), scale=None, velocity=(None, None, None)):
-        self.spawn(loc, scale, velocity)
+    def __init__(self, loc=(None, None, None), mass=None, vel=(None, None, None)):
+        self.spawn(loc, mass, vel)
 
     def createOrbitR(self):
         self.P=rrange(pLow,pHigh)
-        self.e=rrange(0,0.3)
+        self.e=rrange(0,0.5)
         self.alpha0 = rrange(0,2*math.pi)
         self.theta = rrange(0,math.pi)
         self.phi = rrange(0,2*math.pi)
-        self.t0 = rrange(0,self.P)
-        
+        self.t0 = rrange(0,self.P)     
         self.a = pow((G*Mearth)*pow(self.P,2)/(4*math.pi*math.pi),(1/3))
+        
+        print(self.P,self.e,self.alpha0,self.phi,self.t0,self.a)
+        
+        self.getCartLoc()
+        
+        self.createOrbit()
+        print(self.P,self.e,self.alpha0,self.phi,self.t0,self.a)
 
     def createOrbit(self):
-        v = self.velocity
+        v = self.vel
         r = self.loc
+        
         #These are the angles of the normal vector in polar coordinates
         self.phi = math.atan((v[0]*v[2] - r[0]*r[2])/(r[1]*r[2] - v[1]*v[2])) 
         self.theta = math.atan(math.sqrt(pow((v[1]*v[2] -r[1]*r[2]),2) + pow((v[0]*v[2] -r[0]*r[2]),2))/(r[0]*r[1] - v[0]*v[1]))
 
-        r2 = r[0]^2 + r[1]^2 + r[2]^2
+        r2 = pow(r[0],2) + pow(r[1],2) + pow(r[2],2)
         rMag=math.sqrt(r2)
         v2 = pow(v[0],2) + pow(v[1],2) + pow(v[2],2)
         w2 = r2*v2
-    
-        self.e = math.sqrt(w2*(v2/(G*Mearth) - 2/rMag) + 1) #eccentricity
+        
+        print(rMag,math.sqrt(v2))
 
-        if(self.e > 1):
+        EperM = v2/2 - G*Mearth/rMag
+        
+        print(EperM)
+        print(pow(G*Mearth,2)/2*w2)
+        
+        self.e = math.sqrt(EperM*2*w2/pow(G*Mearth,2) + 1) #eccentricity
+
+        # print(self.e)
+        
+        if(self.e > 0.9):
             self.despawn()
             return
         
-        EperM = v2/2 - G*Mearth/rMag
+        
         
         rm = (math.sqrt(pow((G*Mearth),2) + 2*EperM*r2*v2)-G*Mearth)/(2*EperM)
 
         self.a = rm/(1-self.e)
         
         self.P = math.sqrt(pow(self.a,3)*4*math.pi*math.pi/(G*Mearth)) #Orbital period
+    
+    
+        x = r[0]
+        y = r[1]
+        z = r[2]
+        
+        xPlane = x*math.cos(self.theta)*math.cos(self.phi) - y*math.cos(self.theta)*math.sin(self.phi) - z*math.sin(self.theta)*math.cos(self.phi)
+        yPlane = x*math.cos(self.theta)*math.sin(self.phi) + y*math.cos(self.theta)*math.cos(self.phi) - z*math.sin(self.theta)*math.sin(self.phi)
+        
+        #print(self.e)
+        #print(((self.a*(1-pow(self.e,2))/rMag)-1)/self.e)
+        theta = math.acos(((self.a*(1-pow(self.e,2))/rMag)-1)/self.e)
 
-        self.alpha0 = math.acos((rMag*v2/(G*Mearth)-1)/self.e)-math.atan(r[1]/r[0]) #Angle of r_min from x axis
-
-        theta = math.acos((rMag*v2/(G*Mearth)-1)/self.e)
+        self.alpha0 = theta-math.atan2(yPlane,xPlane) #Angle of r_min from x axis
+        
         
         E = 2*math.atan(math.sqrt((1-self.e)*pow(math.tan(theta/2),2)/(1+self.e)))
 
@@ -121,38 +160,34 @@ class CollisionObject:
         alpha = 2*math.atan2(math.sqrt((1+self.e)/(1-self.e))*math.tan(E/2),1)
         dist = self.a*(1-self.e*math.cos(E))
         
-        print(E)
         return (dist,alpha)
     
     def getCartLoc(self):
 
         pos = self.getOrbitPos()
         
-#        vel = sqrt(G*Mearth*(2/pos[0] - 1/self.a))
+        vel2 = G*Mearth*(2/pos[0] - 1/self.a)
         
-#        rpert = r*self.a*self.e*math.sin(alpha)(1-self.e^2)/pow((1 + self.e*math.cos(alpha)),2)
+        beta = -math.tan(pos[1])/math.sqrt(1-pow(self.e,2))
 
+        vx0 = math.sqrt(vel2/(1+pow(beta,2)))
+        vy0 = vx0/beta
+
+        vx = vx0*math.cos(self.theta)*math.cos(self.phi) - vy0*math.cos(self.theta)*math.sin(self.phi)
+        vy = vx0*math.cos(self.theta)*math.sin(self.phi) + vy0*math.cos(self.theta)*math.cos(self.phi)
+        vz = -vx0*math.sin(self.theta)*math.cos(self.phi) -vy0*math.sin(self.theta)*math.sin(self.phi)
+        self.vel = (vx,vy,vz)
+        
+        
         x0 = pos[0]*math.cos(pos[1]-self.alpha0)
         y0 = pos[0]*math.sin(pos[1]-self.alpha0)
 
         x = x0*math.cos(self.theta)*math.cos(self.phi) - y0*math.cos(self.theta)*math.sin(self.phi)
         y = x0*math.cos(self.theta)*math.sin(self.phi) + y0*math.cos(self.theta)*math.cos(self.phi)
         z = -x0*math.sin(self.theta)*math.cos(self.phi) -y0*math.sin(self.theta)*math.sin(self.phi)
-        return (x,y,z)
-  
-    def pickStartingVelocity(self):
-        x = rrange(-vstart, vstart)
-        y = rrange(-vstart, vstart)
-        z = rrange(-vstart, vstart)
-        self.velocity = (x, y, z)
-    
-    def pickStartingLocation(self):
-        x = rrange(-rstart, rstart)
-        y = rrange(-rstart, rstart)
-        z = rrange(-rstart, rstart)
-        return (x, y, z)
+        self.loc = (x,y,z)
         
-    def spawn(self, loc, scale, velocity):
+    def spawn(self, loc, mass, velocity):
         self.spawned = True
         self.immune = 10
         self.mesh = bpy.data.meshes.new_from_object(
@@ -162,25 +197,21 @@ class CollisionObject:
             'PREVIEW')
         self.object = bpy.data.objects.new("Object", self.mesh)
         bpy.context.scene.objects.link(self.object)
+        
         if loc[0] is None or loc[1] is None or loc[2] is None:
-            self.setLocation(self.pickStartingLocation())
-        else:
-            x = loc[0]
-            y = loc[1]
-            z = loc[2]
-            self.setLocation((x, y, z))       
-        if scale is None:
-            self.setScale(rrange(ScaleMin, ScaleMax))
-        else:
-            self.setScale(scale)
-        if velocity[0] is None or velocity[1] is None or velocity[2] is None:
-            self.pickStartingVelocity()
-        else:
-            self.velocity = velocity
-
-        if self.P is None or self.e is None:
             self.createOrbitR()
-
+        else:
+            self.loc = loc
+            self.vel = velocity
+            self.createOrbit()
+        
+        self.setLocation()       
+            
+        if mass is None:
+            self.setMass(rrange(massMin, massMax))
+        else:
+            self.setMass(mass)
+            
         self.object.hide = True
         self.object.hide_render = True
         self.object.keyframe_insert(data_path="hide", frame=bpy.context.scene.frame_current-1)  
@@ -214,12 +245,13 @@ class CollisionObject:
         return 0
         
     def getXYZ(self):
-        loc = self.object.location
+        loc = self.loc
         return loc
         
-    def setLocation(self, loc):
+    def setLocation(self):
         if self.object is not None:
-            loc = (loc[0]/100, loc[1]/100, loc[2]/100)
+            r = self.loc
+            loc = (r[0]/sizeScale, r[1]/sizeScale, r[2]/sizeScale)
             self.object.location = loc
             self.object.keyframe_insert(data_path="location")            
     
@@ -228,12 +260,23 @@ class CollisionObject:
             return self.object.scale[1]
             
     def setScale(self, scale):
+        
+        if scale > ScaleMax:
+            scale = ScaleMax
+        if scale < ScaleMin:
+            scale = ScaleMin
+           
         if self.object is not None:
             self.object.scale = (scale, scale, scale)
-    
+            
     def getMass(self):
-        scale = self.object.scale[1]
-        return density*scale*scale*scale
+        if self.object is not None:
+            return self.mass
+        
+    def setMass(self, mass):
+        if self.object is not None:
+            self.mass = mass
+            self.setScale(ScaleFactor*density/mass)
     
     def _tick(self, rewind=False):
         if self.hidden:
@@ -247,8 +290,9 @@ class CollisionObject:
         dt = 100
 
         self.t = self.t+dt
-        
-        self.setLocation(self.getCartLoc())
+
+        self.getCartLoc()
+        self.setLocation()
         
                 
     def tick(self, ticks):
@@ -297,6 +341,17 @@ def checkCollision(a, b):
     r1 = a.getXYZ()
     r2 = b.getXYZ()
     
+    v1 = a.vel
+    v2 = b.vel
+
+    vx1 = v1[0]
+    vy1 = v1[1]
+    vz1 = v1[2]
+    
+    vx2 = v2[0]
+    vy2 = v2[1]
+    vz2 = v2[2]
+    
     x1 = r1[0]
     y1 = r1[1]
     z1 = r1[2]
@@ -304,14 +359,6 @@ def checkCollision(a, b):
     x2 = r2[0]
     y2 = r2[1]
     z2 = r2[2]
-    
-    vr1 = a.velocity[0]
-    vtheta1 = a.velocity[1]
-    vphi1 = a.velocity[2]
-        
-    vr2 = b.velocity[0]
-    vtheta2 = b.velocity[1]
-    vphi2 = b.velocity[2]
     
     d = math.pow(x2-x1,2) + math.pow(y2-y1,2) + math.pow(z2-z1,2)
     d = math.sqrt(d)
@@ -321,31 +368,88 @@ def checkCollision(a, b):
     if s1 is None or s2 is None:
         return False
     
-    s = (s1+s2)/2
+    s = collideScale*(s1+s2)/2
     
     if d < s:
+        print("boom")
+        
+        # print(r1,v1)
+        # print(r2,v2)
+    
         # collision happened.       
         
         # both objects are deleted
         a.hide()
         b.hide()
         
-        # create 4 objects. very fake
-        a = CollisionObject(((x1+x2)/2,(y1+y2)/2,(z1+z2)/2), (s1+s2)/4, (-vr1, vtheta1, vphi1))
-        b = CollisionObject(((x1+x2)/2,(y1+y2)/2,(z1+z2)/2), (s1+s2)/4, (vr1, vtheta1, vphi1))
-        c = CollisionObject(((x1+x2)/2,(y1+y2)/2,(z1+z2)/2), (s1+s2)/4, (vr2, -vtheta2, vphi2))
-        d = CollisionObject(((x1+x2)/2,(y1+y2)/2,(z1+z2)/2), (s1+s2)/4, (vr2, vtheta2, -vphi2))
-        cb.append(a)
-        cb.append(b)
-        cb.append(c)
-        cb.append(d)
-        allcb.append(a)
-        allcb.append(b)
-        allcb.append(c)
-        allcb.append(d)
+        N = random.randint(nMin, nMax)
+    
+        m1 = a.getMass() 
+        m2 = b.getMass()
+        
+        Mtot = m1 + m2
+        
+        pxTot = vx1*m1 + vx2*m2
+        pyTot = vy1*m1 + vy2*m2
+        pzTot = vz1*m1 + vz2*m2
+        
+        Mtot2 = 0
+        
+        pxTot2 = 0
+        pyTot2 = 0
+        pzTot2 = 0
+        
+        ms = []
+        vxs = []
+        vys = []
+        vzs = []
+
+
+        
+        for i in range(0,N-1):
+            ms.append(abs(random.uniform(0.5*Mtot/N,1.5*Mtot/N)))
+            vxs.append(random.gauss((vx1 + vx2)/N,(vx1 + vx2)/(3*N)))
+            vys.append(random.gauss((vy1 + vy2)/N,(vy1 + vy2)/(3*N)))
+            vzs.append(random.gauss((vz1 + vz2)/N,(vz1 + vz2)/(3*N)))
             
+        for i in range(0,N-1):
+            Mtot2  += ms[i]
+            
+        for i in range(0,N-1):
+            ms[i]  *= Mtot/Mtot2
+            
+        for i in range(0,N-1):
+            pxTot2 += vxs[i]*ms[i]
+            pyTot2 += vys[i]*ms[i]
+            pzTot2 += vzs[i]*ms[i] 
+		
+
+        for i in range(0,N-1):
+
+
+            vxs[i] *= pxTot/(pxTot2)
+            vys[i] *= pyTot/(pyTot2)
+            vzs[i] *= pzTot/(pxTot2)
+            
+
+            
+            obj = CollisionObject(((x1+x2)/2,(y1+y2)/2,(z1+z2)/2), ms[i], (vxs[i], vys[i], vzs[i]))
+            
+            cb.append(obj)
+            allcb.append(obj)
+
+#        pxTot2 = 0
+#        mTot2 = 0
+
+#        for i in range(0,N-1):
+#            pxTot2 += vxs[i]*ms[i]
+#            mTot2 += ms[i]
+
         return True
     return False
+    
+ 
+        
 
 cb = []    
 last_frame = 0
@@ -355,10 +459,15 @@ started = False
       
 Rmin = 10
 Rmax = 20
-ScaleMin = 0.1
-ScaleMax = 1
+
+ScaleFactor = 10
+ScaleMin = 1
+ScaleMax = 10
+
 Me=1
-density = 100  
+density = 132 #kg/m^3 - based on https://en.wikipedia.org/wiki/Envisat
+
+
 
 class KesslerSyndromeStart(bpy.types.Operator):
     bl_idname = "ks.start"
@@ -382,6 +491,8 @@ class KesslerSyndromeStart(bpy.types.Operator):
         ScaleMin = context.scene.ScaleMin
         global ScaleMax
         ScaleMax = context.scene.ScaleMax
+        global ScaleFactor
+        ScaleFactor = context.scene.ScaleFactor
         global Me
         Me = context.scene.Me
         global density
@@ -454,6 +565,8 @@ class KSPanel(bpy.types.Panel):
         r2 = col1.row(align=True)       
         r2.prop(context.scene, "ScaleMin", slider=True)
         r2.prop(context.scene, "ScaleMax", slider=True)
+        r3 = col1.row(align=True)   
+        r3.prop(context.scene, "ScaleFactor", slider=True)
         col1.prop(context.scene, "Me", slider=True)
         col1.prop(context.scene, "density", slider=True)
         col2 = self.layout.column(align=True)
@@ -493,14 +606,21 @@ def register():
       (
         name = "ScaleMin",
         description = "Minimum scale to generate objects",
-        default = 0.1,
+        default = ScaleMin,
         min = 0
       )
     bpy.types.Scene.ScaleMax = bpy.props.FloatProperty \
       (
         name = "ScaleMax",
         description = "Maximum scale to generate objects",
-        default = 1,
+        default = ScaleMax,
+        min = 0
+      )
+    bpy.types.Scene.ScaleFactor = bpy.props.FloatProperty \
+      (
+        name = "ScaleFactor",
+        description = "How much larger does the object appear?",
+        default = 100,
         min = 0
       )
     bpy.types.Scene.Me = bpy.props.FloatProperty \
