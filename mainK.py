@@ -2,6 +2,7 @@ import bpy
 import random
 import math
 import time
+import os
 #import numpy as np
 #import matplotlib.pyplot as plt
 #from scipy.optimize import fsolve
@@ -383,6 +384,7 @@ def frame_change_handler(scene):
         bpy.app.handlers.frame_change_pre.clear()
         global started
         started = False
+        closeFile()
         return
     dframe = frame-last_frame
     
@@ -397,6 +399,13 @@ def frame_change_handler(scene):
        for k in range(len(cb)-i):
           if i != k:
              checkCollision(cb[i], cb[k])
+             
+    sizes = []
+    for i in range(len(cb)):
+        if not cb[i].hidden:
+            sizes.append(str(cb[i].getScale()))
+             
+    fileWrite("%d, %d, %s" % (frame, len(sizes), ' ,'.join(sizes)))
                         
     last_frame = frame
 
@@ -545,8 +554,39 @@ Density = 132 #kg/m^3 - based on https://en.wikipedia.org/wiki/Envisat
 startBreakup = True
 breakupTime = 1000
 
+def strTime():
+    return time.strftime("%y/%m/%d %H:%m:%S")
 
+def fileWrite(str):
+    global outputfilename
+    global filehandle
+    if filehandle is not None:
+        try:
+            filehandle.write("%s\n" % str)
+        except Exception as e:
+            print(str(e))
+            
+def openFile():
+    global outputfilename
+    global filehandle
+    if filehandle is None:
+        try:
+            filehandle = open(outputfilename, "a")
+        except Exception as e:
+            print(str(e))
+            filehandle = None
+            
+def closeFile():
+    global filehandle
+    if filehandle is not None:
+        try:
+            filehandle.close()
+            filehandle = None
+        except Exception as e:
+            print(str(e))
 
+outputfilename = "1.csv"
+filehandle = None
 class KesslerSyndromeStart(bpy.types.Operator):
     bl_idname = "ks.start"
     bl_label = "Start"
@@ -571,10 +611,26 @@ class KesslerSyndromeStart(bpy.types.Operator):
         MinMass = context.scene.MinMass
         global ScaleFactor
         ScaleFactor = context.scene.ScaleFactor
+<<<<<<< HEAD
         global CollideScale
         CollideScale = context.scene.CollideScale
         global Density
         Density = context.scene.Density        
+=======
+        global Me
+        Me = context.scene.Me
+        global density
+        density = context.scene.density
+        
+        global outputfilename
+        outputfilename = context.scene.filename
+        outputfilename = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', outputfilename)
+
+        openFile()
+        fileWrite("# [%s] Started simulation of %d objects" % (strTime(), context.scene.number_of_objects))
+        fileWrite("# time(frame), num of objects, sizes of objects ...")
+
+>>>>>>> origin/master
         
         bpy.ops.screen.frame_jump(1)
         
@@ -607,6 +663,8 @@ class KesslerSyndromeContinue(bpy.types.Operator):
         bpy.app.handlers.frame_change_pre.clear()
         bpy.app.handlers.frame_change_pre.append(frame_change_handler)
         bpy.ops.screen.animation_play()
+        
+        openFile()
         return {"FINISHED"}
         
 class KesslerSyndromeStop(bpy.types.Operator):
@@ -618,6 +676,7 @@ class KesslerSyndromeStop(bpy.types.Operator):
         started = False
         bpy.app.handlers.frame_change_pre.clear()
         bpy.ops.screen.animation_cancel(restore_frame=False)
+        closeFile()
         return {"FINISHED"}
     
 class KesslerSyndromeClear(bpy.types.Operator):
@@ -652,11 +711,27 @@ class KSPanel(bpy.types.Panel):
         r2 = col1.row(align=True)       
         r2.prop(context.scene, "ScaleMin", slider=True)
         r2.prop(context.scene, "ScaleMax", slider=True)
+<<<<<<< HEAD
         col2 = self.layout.column(align=True)
         col2.operator("ks.start")
         col2.operator("ks.continue")
         col2.operator("ks.stop")
         col2.operator("ks.clear")   
+=======
+        r3 = col1.row(align=True)   
+        r3.prop(context.scene, "ScaleFactor", slider=True)
+        col1.prop(context.scene, "Me", slider=True)
+        col1.prop(context.scene, "density", slider=True)
+        
+        colf = self.layout.column(align=True)
+        colf.prop(context.scene, "filename")
+        
+        colo = self.layout.column(align=True)       
+        colo.operator("ks.start")
+        colo.operator("ks.continue")
+        colo.operator("ks.stop")
+        colo.operator("ks.clear")
+>>>>>>> origin/master
 
 def register():
     bpy.utils.register_class(KSPanel)
@@ -719,6 +794,13 @@ def register():
         description = "Maximum scale to generate objects",
         default = ScaleMax,
         min = 0
+      )
+      
+    bpy.types.Scene.filename = bpy.props.StringProperty \
+      (
+        name = "Output File",
+        description = "The file to output data to",
+        default = "1.csv"
       )
       
 def unregister():
