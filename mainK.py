@@ -28,9 +28,6 @@ massMax = 10000 #kg
 
 sizeScale = 100000 #scale down linear distances
 
-collideScale = 100000 #scales likelyhood of collisions
-
-
 def rrange(min, max):
     return random.random()*(max-min)+min
 
@@ -43,6 +40,9 @@ class CollisionObject:
     hidden = False    
     immune = 0
     mass = 0
+    radius = 0
+    scale = 0
+    envisat = False
 
     X = (0, 0, 0) #unit vetors for the projected plane
     Y = (0, 0, 0)
@@ -56,9 +56,18 @@ class CollisionObject:
 
     t = 0
     
-    def __init__(self, loc=(None, None, None), mass=None, vel=(None, None, None)):
-        self.spawn(loc, mass, vel)
-
+    def __init__(self, loc=(None, None, None), mass=None, vel=(None, None, None),envisat=False):
+        self.spawn(loc, mass, vel, envisat)
+        
+    def createOrbitEnvisat(self):
+        self.P=6000
+        self.e=0
+        self.alpha0 = 0
+        self.t0 = 0    
+        self.a = pow((G*Mearth)*pow(self.P,2)/(4*math.pi*math.pi),(1/3))
+        self.createNormal(rrange(-1,1),rrange(-1,1),rrange(-1,1))
+        self.envisat = True
+        
     def createOrbitR(self):
         self.P=rrange(pLow,pHigh)
         self.e=rrange(0,0.5)
@@ -235,7 +244,7 @@ class CollisionObject:
         
         # print("out",math.sqrt(pow(vx,2) + pow(vy,2) + pow(vz,2)),math.sqrt(pow(x,2) + pow(y,2) + pow(z,2)))
         
-    def spawn(self, loc, mass, velocity):
+    def spawn(self, loc, mass, velocity, envisat):
         self.spawned = True
         self.immune = 10
         self.mesh = bpy.data.meshes.new_from_object(
@@ -246,7 +255,9 @@ class CollisionObject:
         self.object = bpy.data.objects.new("Object", self.mesh)
         bpy.context.scene.objects.link(self.object)
         
-        if loc[0] is None or loc[1] is None or loc[2] is None:
+        if envisat:
+            self.createOrbitEnvisat()
+        elif loc[0] is None or loc[1] is None or loc[2] is None:
             self.createOrbitR()
         else:
             self.loc = loc
@@ -255,7 +266,9 @@ class CollisionObject:
         
         self.setLocation()       
             
-        if mass is None:
+        if envisat:
+            self.setMass(8211)        
+        elif mass is None:
             self.setMass(rrange(massMin, massMax))
         else:
             self.setMass(mass)
@@ -305,18 +318,19 @@ class CollisionObject:
     
     def getScale(self):
         if self.object is not None:
-            return self.object.scale[1]
+            return self.scale
             
-    def setScale(self, scale):
-        
-        if scale > ScaleMax:
-            scale = ScaleMax
-        if scale < ScaleMin:
-            scale = ScaleMin
-           
+    def setScale(self, scale):  
         if self.object is not None:
+            scale *= ScaleFactor
+
+            if scale > ScaleMax:
+                scale = ScaleMax
+            if scale < ScaleMin:
+                scale = ScaleMin
+                
             self.object.scale = (scale, scale, scale)
-            
+                     
     def getMass(self):
         if self.object is not None:
             return self.mass
@@ -324,7 +338,10 @@ class CollisionObject:
     def setMass(self, mass):
         if self.object is not None:
             self.mass = mass
-            self.setScale(ScaleFactor*density/mass)
+            self.setScale(ScaleFactor*Density/mass)
+            self.scale = ((3.*4./math.pi*mass/Density)**(1./3.))
+            self.setScale(self.scale)
+     
     
     def _tick(self, rewind=False):
         if self.hidden:
@@ -375,6 +392,7 @@ def frame_change_handler(scene):
     deli = []
     delk = []
     # very inefficient N^N collision checking
+    # print(len(cb))
     for i in range(len(cb)):
        for k in range(len(cb)-i):
           if i != k:
@@ -389,17 +407,6 @@ def checkCollision(a, b):
     r1 = a.getXYZ()
     r2 = b.getXYZ()
     
-    v1 = a.vel
-    v2 = b.vel
-
-    vx1 = v1[0]
-    vy1 = v1[1]
-    vz1 = v1[2]
-    
-    vx2 = v2[0]
-    vy2 = v2[1]
-    vz2 = v2[2]
-    
     x1 = r1[0]
     y1 = r1[1]
     z1 = r1[2]
@@ -408,16 +415,15 @@ def checkCollision(a, b):
     y2 = r2[1]
     z2 = r2[2]
     
-    d = math.pow(x2-x1,2) + math.pow(y2-y1,2) + math.pow(z2-z1,2)
-    d = math.sqrt(d)
-    
+    d = min(abs(x2-x1),abs(y2-y1),abs(z2-z1))
+
     s1 = a.getScale()
     s2 = b.getScale()
+    
     if s1 is None or s2 is None:
         return False
     
-    s = collideScale*(s1+s2)/2
-    
+    s = CollideScale*(s1+s2)/2
     if d < s:
         print("boom")
         
@@ -427,74 +433,93 @@ def checkCollision(a, b):
         # collision happened.       
         
         # both objects are deleted
-        a.hide()
-        b.hide()
+        v1 = a.vel
+        v2 = b.vel
+
+        vx1 = v1[0]
+        vy1 = v1[1]
+        vz1 = v1[2]
         
-        N = random.randint(nMin, nMax)
+        vx2 = v2[0]
+        vy2 = v2[1]
+        vz2 = v2[2]
+        
+
     
         m1 = a.getMass() 
         m2 = b.getMass()
         
-        Mtot = m1 + m2
+       
+    elif a.envisat and a.t > breakupTime:
+        print("bam")
+        v1 = a.vel
+
+        vx1 = v1[0]
+        vy1 = v1[1]
+        vz1 = v1[2]
         
-        pxTot = vx1*m1 + vx2*m2
-        pyTot = vy1*m1 + vy2*m2
-        pzTot = vz1*m1 + vz2*m2
+        vx2 = 0
+        vy2 = 0
+        vz2 = 0
         
-        Mtot2 = 0
+        m1 = a.getMass() 
+        m2 = 0
         
-        pxTot2 = 0
-        pyTot2 = 0
-        pzTot2 = 0
+    else: 
+        return False
+
+    a.hide()
+    b.hide()
+    
+    Mtot = m1 + m2
         
-        ms = []
-        vxs = []
-        vys = []
-        vzs = []
-
-
+    pxTot = vx1*m1 + vx2*m2
+    pyTot = vy1*m1 + vy2*m2
+    pzTot = vz1*m1 + vz2*m2
         
-        for i in range(0,N-1):
-            ms.append(abs(random.uniform(0.5*Mtot/N,1.5*Mtot/N)))
-            vxs.append(random.gauss((vx1 + vx2)/N,(vx1 + vx2)/(3*N)))
-            vys.append(random.gauss((vy1 + vy2)/N,(vy1 + vy2)/(3*N)))
-            vzs.append(random.gauss((vz1 + vz2)/N,(vz1 + vz2)/(3*N)))
-            
-        for i in range(0,N-1):
-            Mtot2  += ms[i]
-            
-        for i in range(0,N-1):
-            ms[i]  *= Mtot/Mtot2
-            
-        for i in range(0,N-1):
-            pxTot2 += vxs[i]*ms[i]
-            pyTot2 += vys[i]*ms[i]
-            pzTot2 += vzs[i]*ms[i] 
-		
+    N = round(Mtot/AverageMass)
+    print(N)
+    Mtot2 = 0
+    
+    pxTot2 = 0
+    pyTot2 = 0
+    pzTot2 = 0
+    
+    ms = []
+    vxs = []
+    vys = []
+    vzs = []
+    
+    for i in range(0,N-1):
+        ms.append(random.gauss(AverageMass,AverageMass/4))
+        if(ms[i] < MinMass):
+            ms[i] = MinMass
+        vxs.append(random.gauss((vx1 + vx2)/N,(vx1 + vx2)/(4*N)))
+        vys.append(random.gauss((vy1 + vy2)/N,(vy1 + vy2)/(4*N)))
+        vzs.append(random.gauss((vz1 + vz2)/N,(vz1 + vz2)/(4*N)))
+        
+    for i in range(0,N-1):
+        Mtot2  += ms[i]
+        
+    for i in range(0,N-1):
+        ms[i]  *= Mtot/Mtot2
+        
+    for i in range(0,N-1):
+        pxTot2 += vxs[i]*ms[i]
+        pyTot2 += vys[i]*ms[i]
+        pzTot2 += vzs[i]*ms[i] 
+    
+    for i in range(0,N-1):
+        vxs[i] *= pxTot/(pxTot2)
+        vys[i] *= pyTot/(pyTot2)
+        vzs[i] *= pzTot/(pxTot2)
 
-        for i in range(0,N-1):
+        obj = CollisionObject(((x1+x2)/2,(y1+y2)/2,(z1+z2)/2), ms[i], (vxs[i], vys[i], vzs[i]))
+        
+        cb.append(obj)
+        allcb.append(obj)
 
-
-            vxs[i] *= pxTot/(pxTot2)
-            vys[i] *= pyTot/(pyTot2)
-            vzs[i] *= pzTot/(pxTot2)
-            
-
-            
-            obj = CollisionObject(((x1+x2)/2,(y1+y2)/2,(z1+z2)/2), ms[i], (vxs[i], vys[i], vzs[i]))
-            
-            cb.append(obj)
-            allcb.append(obj)
-
-#        pxTot2 = 0
-#        mTot2 = 0
-
-#        for i in range(0,N-1):
-#            pxTot2 += vxs[i]*ms[i]
-#            mTot2 += ms[i]
-
-        return True
-    return False
+    return True
     
  
         
@@ -511,9 +536,14 @@ Rmax = 20
 ScaleFactor = 10
 ScaleMin = 1
 ScaleMax = 10
+CollideScale = 1 #scales likelyhood of collisions
 
-Me=1
-density = 132 #kg/m^3 - based on https://en.wikipedia.org/wiki/Envisat
+AverageMass = 100
+MinMass = 1
+Density = 132 #kg/m^3 - based on https://en.wikipedia.org/wiki/Envisat
+
+startBreakup = True
+breakupTime = 1000
 
 
 
@@ -531,20 +561,20 @@ class KesslerSyndromeStart(bpy.types.Operator):
             return {"FINISHED"}
         started = True
         
-        global Rmin
-        Rmin = context.scene.Rmin
-        global Rmax
-        Rmax = context.scene.Rmax
         global ScaleMin
         ScaleMin = context.scene.ScaleMin
         global ScaleMax
         ScaleMax = context.scene.ScaleMax
+        global AverageMass
+        AverageMass = context.scene.AverageMass
+        global MinMass
+        MinMass = context.scene.MinMass
         global ScaleFactor
         ScaleFactor = context.scene.ScaleFactor
-        global Me
-        Me = context.scene.Me
-        global density
-        density = context.scene.density        
+        global CollideScale
+        CollideScale = context.scene.CollideScale
+        global Density
+        Density = context.scene.Density        
         
         bpy.ops.screen.frame_jump(1)
         
@@ -557,6 +587,11 @@ class KesslerSyndromeStart(bpy.types.Operator):
             cb.append(CollisionObject())
             allcb.append(cb[i])
             
+        if(startBreakup):
+            obj = CollisionObject(envisat=True)
+            cb.append(obj)
+            allcb.append(obj)
+
         bpy.app.handlers.frame_change_pre.clear()
         bpy.app.handlers.frame_change_pre.append(frame_change_handler)
 
@@ -606,17 +641,17 @@ class KSPanel(bpy.types.Panel):
  
     def draw(self, context):
         col1 = self.layout.column(align=True)
+        col1.label("Physics parameters")
         col1.prop(context.scene, "number_of_objects", slider=True)
-        r1 = col1.row(align=True)
-        r1.prop(context.scene, "Rmin", slider=True)
-        r1.prop(context.scene, "Rmax", slider=True)
+        col1.prop(context.scene, "AverageMass", slider=True)
+        col1.prop(context.scene, "MinMass", slider=True)
+        col1.prop(context.scene, "CollideScale", slider=True)
+        col1.prop(context.scene, "Density", slider=True)
+        col1.label("Display parameters")
+        col1.prop(context.scene, "ScaleFactor", slider=True)
         r2 = col1.row(align=True)       
         r2.prop(context.scene, "ScaleMin", slider=True)
         r2.prop(context.scene, "ScaleMax", slider=True)
-        r3 = col1.row(align=True)   
-        r3.prop(context.scene, "ScaleFactor", slider=True)
-        col1.prop(context.scene, "Me", slider=True)
-        col1.prop(context.scene, "density", slider=True)
         col2 = self.layout.column(align=True)
         col2.operator("ks.start")
         col2.operator("ks.continue")
@@ -633,21 +668,42 @@ def register():
       (
         name = "N",
         description = "Number of objects to generate",
-        default = 10,
+        default = 100,
         min = 0
       )      
-    bpy.types.Scene.Rmin = bpy.props.FloatProperty \
+    bpy.types.Scene.AverageMass = bpy.props.FloatProperty \
       (
-        name = "Rmin",
-        description = "Minimum radius to generate objects",
+        name = "Average Breakup Mass(kg)",
+        description = "The average mass of broken off satellite chunks",
+        default = AverageMass,
+        min = 0
+      )
+    bpy.types.Scene.MinMass = bpy.props.FloatProperty \
+      (
+        name = "Min Breakup Mass (kg)",
+        description = "The minimum mass of broken off satelite chunks",
+        default = MinMass,
+        min = 0
+      )
+    bpy.types.Scene.CollideScale = bpy.props.FloatProperty \
+      (
+        name = "Collision Scale",
+        description = "How much bigger the objects radius is for the collision zone",
         default = 10,
         min = 0
       )
-    bpy.types.Scene.Rmax = bpy.props.FloatProperty \
+    bpy.types.Scene.Density = bpy.props.FloatProperty \
       (
-        name = "Rmax",
-        description = "Maximum radius to generate objects",
-        default = 20,
+        name = "Density",
+        description = "Density of objects(kg/m^3)",
+        default = 100,
+        min = 0
+      )     
+    bpy.types.Scene.ScaleFactor = bpy.props.FloatProperty \
+      (
+        name = "ScaleFactor",
+        description = "How much larger does the object appear?",
+        default = 100,
         min = 0
       )
     bpy.types.Scene.ScaleMin = bpy.props.FloatProperty \
@@ -662,27 +718,6 @@ def register():
         name = "ScaleMax",
         description = "Maximum scale to generate objects",
         default = ScaleMax,
-        min = 0
-      )
-    bpy.types.Scene.ScaleFactor = bpy.props.FloatProperty \
-      (
-        name = "ScaleFactor",
-        description = "How much larger does the object appear?",
-        default = 100,
-        min = 0
-      )
-    bpy.types.Scene.Me = bpy.props.FloatProperty \
-      (
-        name = "Me",
-        description = "Mass of earth",
-        default = 1, #5.972*math.pow(10, 24)
-        min = 0
-      )
-    bpy.types.Scene.density = bpy.props.FloatProperty \
-      (
-        name = "density",
-        description = "Density of objects",
-        default = 100,
         min = 0
       )
       
