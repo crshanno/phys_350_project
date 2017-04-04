@@ -637,11 +637,16 @@ class KesslerSyndromeStart(bpy.types.Operator):
         Density = context.scene.Density        
         
         global outputfilename
-        outputfilename = context.scene.filename
-        outputfilename = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', outputfilename)
+        fn = context.scene.filename
+        outputfilename = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', fn)
+        while os.path.exists(outputfilename):
+            fn = "_%s" % fn
+            outputfilename = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', fn)            
 
         openFile()
         fileWrite("# [%s] Started simulation of %d objects" % (strTime(), context.scene.number_of_objects))
+        fileWrite("# AverageMass: %f" % AverageMass)
+        fileWrite("# CollideScale: %f" % CollideScale)
         fileWrite("# time(frame), num of objects, sizes of objects ...")
         
         bpy.ops.screen.frame_jump(1)
@@ -702,6 +707,8 @@ class KesslerSyndromeClear(bpy.types.Operator):
             allcb[i].despawn()
         cb = []
         allcb = []
+        bpy.ops.object.select_all(action='SELECT')
+        bpy.ops.object.delete()
         return {"FINISHED"}
 
 class KSPanel(bpy.types.Panel):
