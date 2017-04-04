@@ -44,8 +44,9 @@ class CollisionObject:
     immune = 0
     mass = 0
 
-    theta = 0
-    phi = 0
+    X = (0, 0, 0) #unit vetors for the projected plane
+    Y = (0, 0, 0)
+    Z = (0, 0, 0)
     P = None
     e = None
     alpha0 = 0
@@ -62,39 +63,68 @@ class CollisionObject:
         self.P=rrange(pLow,pHigh)
         self.e=rrange(0,0.5)
         self.alpha0 = rrange(0,2*math.pi)
-        self.theta = rrange(0,math.pi)
-        self.phi = rrange(0,2*math.pi)
         self.t0 = rrange(0,self.P)     
         self.a = pow((G*Mearth)*pow(self.P,2)/(4*math.pi*math.pi),(1/3))
+        self.createNormal(rrange(-1,1),rrange(-1,1),rrange(-1,1))
         
-#        print("start")
-#        print(self.P,self.e,self.alpha0,self.phi,self.t0,self.a)
-#        
-#        self.getCartLoc()
-#        
-#        self.createOrbit()
-#        print("end")
-#        print(self.P,self.e,self.alpha0,self.phi,self.t0,self.a)
 
+        # print("start")
+        # print("p",self.P,"e",self.e,"alpha0",self.alpha0,"t0",self.t0,"a",self.a,self.X,self.Y,self.Z)
+        
+        # self.getCartLoc()
+         
+        # self.createOrbit()
+        # print("end")
+        # print("p",self.P,"e",self.e,"alpha0",self.alpha0,"t0",self.t0,"a",self.a,self.X,self.Y,self.Z)
+
+    def createNormal(self,A,B,C):
+        self.Z = self.normalize([A,B,C])
+        self.X = self.normalize(self.cross([0,1,0],self.Z))
+        self.Y = self.normalize(self.cross(self.Z,self.X))
+        
+    def normalize(self,r):
+        len = math.sqrt(pow(r[0],2)+pow(r[1],2)+pow(r[2],2))
+        
+        return[r[0]/len, r[1]/len, r[2]/len]
+    
+    
+    def cross(self,A,B):
+        x = (A[1]*B[2] - A[2]*B[1])
+        y = (A[2]*B[0] - A[0]*B[2])
+        z = (A[0]*B[1] - A[1]*B[0])
+        
+        return(x,y,z)
+        
     def createOrbit(self):
         v = self.vel
         r = self.loc
         
-        #These are the angles of the normal vector in polar coordinates
-        self.phi = math.atan((v[0]*v[2] - r[0]*r[2])/(r[1]*r[2] - v[1]*v[2])) 
-        self.theta = math.atan(math.sqrt(pow((v[1]*v[2] -r[1]*r[2]),2) + pow((v[0]*v[2] -r[0]*r[2]),2))/(r[0]*r[1] - v[0]*v[1]))
+        A = (r[2]*v[1] - r[1]*v[2])*(r[0]*v[1] - r[1]*v[0])
+        B = (r[2]*v[0] - r[0]*v[2])*(r[1]*v[0] - r[0]*v[1])
+        C = (r[0]*v[1] - r[1]*v[0])*(r[1]*v[0] - r[0]*v[1])
+        
+
+        
+        self.createNormal(A,B,C)
+        
+        #Theta is the clockwise angle from x, Phi is the clockwise angle from y
+       
+        # self.phi = math.atan2((r[2]*v[1] - r[1]*v[2]),v[0]*r[1]-v[1]*r[0]) + math.pi
+        
+        # self.phi = math.atan2(r[2] - v[2]*v[1]/r[1],r[0] - v[0]*v[1]/r[1]) 
+        
+        # self.theta = math.atan2(r[2] - v[2]*v[0]/r[0],r[1] - v[1]*v[0]/r[0]) 
+        
+        # self.theta = math.atan2(math.cos(self.phi)*r[2] + math.sin(self.phi)*r[0], r[1])
 
         r2 = pow(r[0],2) + pow(r[1],2) + pow(r[2],2)
         rMag=math.sqrt(r2)
         v2 = pow(v[0],2) + pow(v[1],2) + pow(v[2],2)
         w2 = r2*v2
         
-       # print(rMag,math.sqrt(v2))
+        # print("out",rMag,math.sqrt(v2))
 
         EperM = v2/2 - G*Mearth/rMag
-        
-       # print(EperM)
-       # print(pow(G*Mearth,2)/2*w2)
         
         self.e = math.sqrt(EperM*2*w2/pow(G*Mearth,2) + 1) #eccentricity
 
@@ -117,17 +147,14 @@ class CollisionObject:
         y = r[1]
         z = r[2]
         
-        xPlane = x*math.cos(self.theta)*math.cos(self.phi) - y*math.cos(self.theta)*math.sin(self.phi) - z*math.sin(self.theta)*math.cos(self.phi)
-        yPlane = x*math.cos(self.theta)*math.sin(self.phi) + y*math.cos(self.theta)*math.cos(self.phi) - z*math.sin(self.theta)*math.sin(self.phi)
         
-        #print(self.e)
-        #print(((self.a*(1-pow(self.e,2))/rMag)-1)/self.e)
-        theta = math.acos(((self.a*(1-pow(self.e,2))/rMag)-1)/self.e)
-
-        self.alpha0 = theta-math.atan2(yPlane,xPlane) #Angle of r_min from x axis
+        arg = ((self.a*(1-pow(self.e,2))/rMag)-1)/self.e
+        if(abs(arg) > 1):
+            arg = 1
         
-        
-        E = 2*math.atan(math.sqrt((1-self.e)*pow(math.tan(theta/2),2)/(1+self.e)))
+        self.alpha0 = math.acos(arg)
+           
+        E = 2*math.atan(math.sqrt((1-self.e)*pow(math.tan(self.alpha0/2),2)/(1+self.e)))
 
         self.t0 = (E - self.e*math.sin(E))*2*math.pi/self.P
         
@@ -168,26 +195,45 @@ class CollisionObject:
 
         pos = self.getOrbitPos()
         
-        vel2 = G*Mearth*(2/pos[0] - 1/self.a)
-        
-        beta = -math.tan(pos[1])/math.sqrt(1-pow(self.e,2))
-
-        vx0 = math.sqrt(vel2/(1+pow(beta,2)))
-        vy0 = vx0/beta
-
-        vx = vx0*math.cos(self.theta)*math.cos(self.phi) - vy0*math.cos(self.theta)*math.sin(self.phi)
-        vy = vx0*math.cos(self.theta)*math.sin(self.phi) + vy0*math.cos(self.theta)*math.cos(self.phi)
-        vz = -vx0*math.sin(self.theta)*math.cos(self.phi) -vy0*math.sin(self.theta)*math.sin(self.phi)
-        self.vel = (vx,vy,vz)
-        
-        
         x0 = pos[0]*math.cos(pos[1]-self.alpha0)
         y0 = pos[0]*math.sin(pos[1]-self.alpha0)
 
-        x = x0*math.cos(self.theta)*math.cos(self.phi) - y0*math.cos(self.theta)*math.sin(self.phi)
-        y = x0*math.cos(self.theta)*math.sin(self.phi) + y0*math.cos(self.theta)*math.cos(self.phi)
-        z = -x0*math.sin(self.theta)*math.cos(self.phi) -y0*math.sin(self.theta)*math.sin(self.phi)
+
+        vel2 = G*Mearth*(2/pos[0] - 1/self.a)
+        
+       
+
+        b = self.a*math.sqrt(1-pow(self.e,2))
+
+        c = math.sqrt(pow(self.a,2) - pow(b,2))
+        
+        if(y0 ==0):
+            vx0 = 0
+            vy0 = math.sqrt(vel2)*x0/abs(x0)
+        elif(x0 == 0):
+            vx0 = -math.sqrt(vel2)*y0/abs(y0)
+            vy0 = 0
+        else:
+            beta = -pow(b/self.a,2)*(x0+c)/y0
+            vx0 = -math.sqrt(vel2/(1+pow(beta,2)))*y0/abs(y0)
+            vy0 = beta*vx0
+   
+        # print("in",math.sqrt(pow(vx0,2) + pow(vy0,2)),math.sqrt(pow(x0,2) + pow(y0,2)))
+        
+        vx = self.X[0]*vx0 + self.Y[0]*vy0
+        vy = self.X[1]*vx0 + self.Y[1]*vy0
+        vz = self.X[2]*vx0 + self.Y[2]*vy0
+        
+        self.vel = (vx,vy,vz)
+        
+     
+        x = self.X[0]*x0 + self.Y[0]*y0
+        y = self.X[1]*x0 + self.Y[1]*y0
+        z = self.X[2]*x0 + self.Y[2]*y0
+        
         self.loc = (x,y,z)
+        
+        # print("out",math.sqrt(pow(vx,2) + pow(vy,2) + pow(vz,2)),math.sqrt(pow(x,2) + pow(y,2) + pow(z,2)))
         
     def spawn(self, loc, mass, velocity):
         self.spawned = True
@@ -329,10 +375,10 @@ def frame_change_handler(scene):
     deli = []
     delk = []
     # very inefficient N^N collision checking
-#    for i in range(len(cb)):
-#       for k in range(len(cb)-i):
-#          if i != k:
-#             checkCollision(cb[i], cb[k])
+    for i in range(len(cb)):
+       for k in range(len(cb)-i):
+          if i != k:
+             checkCollision(cb[i], cb[k])
                         
     last_frame = frame
 
