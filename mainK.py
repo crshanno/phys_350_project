@@ -2,9 +2,7 @@ import bpy
 import random
 import math
 import time
-#import numpy as np
-#import matplotlib.pyplot as plt
-#from scipy.optimize import fsolve
+import os
 
 G = 6.67408*math.pow(10, -11) #m^3kg^-1s^-2 (Gravitational constant)
 Mearth = 5.972*math.pow(10, 24) #kg (mass of earth)
@@ -338,7 +336,6 @@ class CollisionObject:
     def setMass(self, mass):
         if self.object is not None:
             self.mass = mass
-            self.setScale(ScaleFactor*Density/mass)
             self.scale = ((3.*4./math.pi*mass/Density)**(1./3.))
             self.setScale(self.scale)
      
@@ -383,6 +380,7 @@ def frame_change_handler(scene):
         bpy.app.handlers.frame_change_pre.clear()
         global started
         started = False
+        closeFile()
         return
     dframe = frame-last_frame
     
@@ -396,11 +394,39 @@ def frame_change_handler(scene):
     for i in range(len(cb)):
        for k in range(len(cb)-i):
           if i != k:
-             checkCollision(cb[i], cb[k])
-                        
+             checkCollision(cb[i], cb[k], frame)
+    
+    sizes = []
+    for i in range(len(cb)):
+        if not cb[i].hidden:
+            sizes.append(str(cb[i].getScale()))
+           
+    fileWrite("%d, %d, %s" % (frame, len(sizes), ' ,'.join(sizes)))
+    
     last_frame = frame
+    bpy.ops.wm.save_mainfile()
 
-def checkCollision(a, b):
+def createCollisionParticleEffect(frame, loc):
+    mesh = bpy.data.meshes.new_from_object(
+        bpy.context.scene, 
+        bpy.data.objects["CollisionEmitter"],
+        True,
+        'PREVIEW')
+    object = bpy.data.objects.new("Particle", mesh)
+    bpy.context.scene.objects.link(object)
+    object.location = loc
+    
+    pset = bpy.data.particles["ParticleSystem"].copy()
+    pset.frame_end = frame + (pset.frame_end - pset.frame_start)
+    pset.frame_start = frame
+    
+    ctx = bpy.context.copy()
+    ctx['object'] = object
+    ctx['active_object'] = bpy.data.objects["CollisionEmitter"]
+    bpy.ops.object.particle_system_add(ctx)
+    object.particle_systems.active.settings = pset
+    
+def checkCollision(a, b, frame):
     if a.hidden or b.hidden or a.immune > 0 or b.immune > 0:
         return False
     
@@ -467,7 +493,8 @@ def checkCollision(a, b):
         
     else: 
         return False
-
+    
+    createCollisionParticleEffect(frame, ((x1+x2)/2//sizeScale,(y1+y2)/2//sizeScale,(z1+z2)/2//sizeScale))
     a.hide()
     b.hide()
     
@@ -546,6 +573,39 @@ startBreakup = True
 breakupTime = 1000
 
 
+def strTime():
+    return time.strftime("%y/%m/%d %H:%m:%S")
+
+def fileWrite(str):
+    global outputfilename
+    global filehandle
+    if filehandle is not None:
+        try:
+            filehandle.write("%s\n" % str)
+        except Exception as e:
+            print(str(e))
+            
+def openFile():
+    global outputfilename
+    global filehandle
+    if filehandle is None:
+        try:
+            filehandle = open(outputfilename, "a")
+        except Exception as e:
+            print(str(e))
+            filehandle = None
+            
+def closeFile():
+    global filehandle
+    if filehandle is not None:
+        try:
+            filehandle.close()
+            filehandle = None
+        except Exception as e:
+            print(str(e))
+
+outputfilename = "1.csv"
+filehandle = None
 
 class KesslerSyndromeStart(bpy.types.Operator):
     bl_idname = "ks.start"
@@ -575,6 +635,14 @@ class KesslerSyndromeStart(bpy.types.Operator):
         CollideScale = context.scene.CollideScale
         global Density
         Density = context.scene.Density        
+        
+        global outputfilename
+        outputfilename = context.scene.filename
+        outputfilename = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', outputfilename)
+
+        openFile()
+        fileWrite("# [%s] Started simulation of %d objects" % (strTime(), context.scene.number_of_objects))
+        fileWrite("# time(frame), num of objects, sizes of objects ...")
         
         bpy.ops.screen.frame_jump(1)
         
@@ -607,6 +675,7 @@ class KesslerSyndromeContinue(bpy.types.Operator):
         bpy.app.handlers.frame_change_pre.clear()
         bpy.app.handlers.frame_change_pre.append(frame_change_handler)
         bpy.ops.screen.animation_play()
+        openFile()
         return {"FINISHED"}
         
 class KesslerSyndromeStop(bpy.types.Operator):
@@ -618,7 +687,9 @@ class KesslerSyndromeStop(bpy.types.Operator):
         started = False
         bpy.app.handlers.frame_change_pre.clear()
         bpy.ops.screen.animation_cancel(restore_frame=False)
+        closeFile()
         return {"FINISHED"}
+    
     
 class KesslerSyndromeClear(bpy.types.Operator):
     bl_idname = "ks.clear"
@@ -652,11 +723,15 @@ class KSPanel(bpy.types.Panel):
         r2 = col1.row(align=True)       
         r2.prop(context.scene, "ScaleMin", slider=True)
         r2.prop(context.scene, "ScaleMax", slider=True)
-        col2 = self.layout.column(align=True)
-        col2.operator("ks.start")
-        col2.operator("ks.continue")
-        col2.operator("ks.stop")
-        col2.operator("ks.clear")   
+        
+        colf = self.layout.column(align=True)
+        colf.prop(context.scene, "filename")
+        
+        colo = self.layout.column(align=True)
+        colo.operator("ks.start")
+        colo.operator("ks.continue")
+        colo.operator("ks.stop")
+        colo.operator("ks.clear")   
 
 def register():
     bpy.utils.register_class(KSPanel)
@@ -720,6 +795,12 @@ def register():
         default = ScaleMax,
         min = 0
       )
+    bpy.types.Scene.filename = bpy.props.StringProperty \
+      (
+        name = "Output File",
+        description = "The file to output data to",
+        default = "1.csv"
+      )
       
 def unregister():
     bpy.utils.unregister_class(KSPanel)
@@ -730,3 +811,4 @@ def unregister():
     
 if __name__ == "__main__" :
     register()
+
