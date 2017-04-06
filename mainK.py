@@ -3,6 +3,7 @@ import random
 import math
 import time
 import os
+import sys
 
 G = 6.67408*math.pow(10, -11) #m^3kg^-1s^-2 (Gravitational constant)
 Mearth = 5.972*math.pow(10, 24) #kg (mass of earth)
@@ -148,7 +149,9 @@ class CollisionObject:
         self.a = rm/(1-self.e)
         
         self.P = math.sqrt(pow(self.a,3)*4*math.pi*math.pi/(G*Mearth)) #Orbital period
-    
+        if self.P < 88*60:
+            self.despawn()
+            return
     
         x = r[0]
         y = r[1]
@@ -369,11 +372,20 @@ class CollisionObject:
                 self._tick()
 
 cb = []    
-allcb = []
 last_frame = 0
+
+def printNow(string, back=False):
+    if back:
+        sys.stdout.write("\r")
+        print(string, end=" ")
+    else:
+        print(string)
+    sys.stdout.flush()
 
 def frame_change_handler(scene):
     global last_frame
+    global cb
+    global newcb
     frame = scene.frame_current
     if frame == scene.frame_end:
         bpy.ops.screen.animation_cancel(restore_frame=False)
@@ -387,14 +399,28 @@ def frame_change_handler(scene):
     for i in range(len(cb)):
         cb[i].tick(dframe)
         
-    deli = []
-    delk = []
+    
     # very inefficient N^N collision checking
-    # print(len(cb))
+    newcb = []
+    tot = sum(range(len(cb)))
+    c = 0
+    last_p = 0
+    start = time.clock()
+    ccount = 0
     for i in range(len(cb)):
        for k in range(len(cb)-i):
           if i != k:
-             checkCollision(cb[i], cb[k], frame)
+             if checkCollision(cb[i], cb[k], frame):
+                 ccount += 1
+             p = 100.*c/tot
+             if p > last_p + .05:
+                printNow("[%.2f%%]" % p, back=True)
+                last_p = p
+             c += 1
+    
+    newcount = len(newcb)
+    for i in range(len(newcb)):
+        cb.append(newcb[i])    
     
     sizes = []
     for i in range(len(cb)):
@@ -402,6 +428,8 @@ def frame_change_handler(scene):
             sizes.append(str(cb[i].getScale()))
            
     fileWrite("%d, %d, %s" % (frame, len(sizes), ' ,'.join(sizes)))
+    end = time.clock()
+    printNow("Done frame: %d. Num: %d. Collisions: %d. New: %d.  (%ds)" % (frame, len(sizes), ccount, newcount, round((end-start))))
     
     last_frame = frame
     bpy.ops.wm.save_mainfile()
@@ -426,6 +454,7 @@ def createCollisionParticleEffect(frame, loc):
     bpy.ops.object.particle_system_add(ctx)
     object.particle_systems.active.settings = pset
     
+newcb = []
 def checkCollision(a, b, frame):
     if a.hidden or b.hidden or a.immune > 0 or b.immune > 0:
         return False
@@ -451,7 +480,7 @@ def checkCollision(a, b, frame):
     
     s = CollideScale*(s1+s2)/2
     if d < s:
-        print("boom")
+        #print("boom")
         
         # print(r1,v1)
         # print(r2,v2)
@@ -477,7 +506,7 @@ def checkCollision(a, b, frame):
         
        
     elif a.envisat and a.t > breakupTime:
-        print("bam")
+        #print("bam")
         v1 = a.vel
 
         vx1 = v1[0]
@@ -494,7 +523,7 @@ def checkCollision(a, b, frame):
     else: 
         return False
     
-    createCollisionParticleEffect(frame, ((x1+x2)/2//sizeScale,(y1+y2)/2//sizeScale,(z1+z2)/2//sizeScale))
+    createCollisionParticleEffect(frame, (x1/sizeScale,y1/sizeScale,z1/sizeScale))
     a.hide()
     b.hide()
     
@@ -503,9 +532,9 @@ def checkCollision(a, b, frame):
     pxTot = vx1*m1 + vx2*m2
     pyTot = vy1*m1 + vy2*m2
     pzTot = vz1*m1 + vz2*m2
-        
+    
     N = round(Mtot/AverageMass)
-    print(N)
+    #print(N)
     Mtot2 = 0
     
     pxTot2 = 0
@@ -543,12 +572,10 @@ def checkCollision(a, b, frame):
 
         obj = CollisionObject(((x1+x2)/2,(y1+y2)/2,(z1+z2)/2), ms[i], (vxs[i], vys[i], vzs[i]))
         
-        cb.append(obj)
-        allcb.append(obj)
+        global newcb
+        newcb.append(obj)
 
     return True
-    
- 
         
 
 cb = []    
@@ -614,7 +641,6 @@ class KesslerSyndromeStart(bpy.types.Operator):
     def invoke(self, context, event):
         global last_frame
         global cb
-        global allcb
         global started
         
         if started:
@@ -651,19 +677,17 @@ class KesslerSyndromeStart(bpy.types.Operator):
         
         bpy.ops.screen.frame_jump(1)
         
-        for i in range(len(allcb)):
-            allcb[i].despawn()        
-        allcb = []
+        for i in range(len(cb)):
+            cb[i].despawn()  
         cb = []    
         
         for i in range(context.scene.number_of_objects):
             cb.append(CollisionObject())
-            allcb.append(cb[i])
             
+        global startBreakup
         if(startBreakup):
             obj = CollisionObject(envisat=True)
             cb.append(obj)
-            allcb.append(obj)
 
         bpy.app.handlers.frame_change_pre.clear()
         bpy.app.handlers.frame_change_pre.append(frame_change_handler)
@@ -702,11 +726,9 @@ class KesslerSyndromeClear(bpy.types.Operator):
     
     def invoke(self, context, event):
         global cb
-        global allcb
-        for i in range(len(allcb)):
-            allcb[i].despawn()
+        for i in range(len(cb)):
+            cb[i].despawn()
         cb = []
-        allcb = []
         bpy.ops.object.select_all(action='SELECT')
         bpy.ops.object.delete()
         return {"FINISHED"}
