@@ -408,15 +408,14 @@ def frame_change_handler(scene):
     start = time.clock()
     ccount = 0
     for i in range(len(cb)):
-       for k in range(len(cb)-i):
-          if i != k:
-             if checkCollision(cb[i], cb[k], frame):
-                 ccount += 1
-             p = 100.*c/tot
-             if p > last_p + .05:
-                printNow("[%.2f%%]" % p, back=True)
-                last_p = p
-             c += 1
+       for k in range(i+1, len(cb)):
+         if checkCollision(cb[i], cb[k], frame):
+             ccount += 1
+         p = 100.*c/tot
+         if p > last_p + .05:
+            printNow("[%.2f%%]" % p, back=True)
+            last_p = p
+         c += 1
     
     newcount = len(newcb)
     for i in range(len(newcb)):
@@ -456,6 +455,7 @@ def createCollisionParticleEffect(frame, loc):
     
 newcb = []
 def checkCollision(a, b, frame):
+    assert a != b
     if a.hidden or b.hidden or a.immune > 0 or b.immune > 0:
         return False
     

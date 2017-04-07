@@ -325,6 +325,7 @@ class CollisionObject:
         
 newcb = []
 def checkCollision(a, b, frame):
+    assert a != b
     if a.hidden or b.hidden or a.immune > 0 or b.immune > 0:
         return False
         
@@ -476,12 +477,6 @@ def closeFile():
             filehandle = None
         except Exception as e:
             print(str(e))
-
-def eraseLine():
-    CURSOR_UP_ONE = '\x1b[1A'
-    ERASE_LINE = '\x1b[2K'
-    print(CURSOR_UP_ONE + ERASE_LINE)
-    sys.stdout.flush()
             
 def next_frame():
     global current_frame
@@ -504,15 +499,14 @@ def next_frame():
     start = time.clock()
     ccount = 0
     for i in range(len(cb)):
-       for k in range(len(cb)-i):
-          if i != k:
-             if checkCollision(cb[i], cb[k], current_frame):
-                ccount += 1
-             p = 100.*c/tot
-             if p > last_p + .05:
-                printNow("[%.2f%%]" % p, back=True)
-                last_p = p
-             c += 1
+       for k in range(i+1, len(cb)):
+         if checkCollision(cb[i], cb[k], current_frame):
+            ccount += 1
+         p = 100.*c/tot
+         if p > last_p + .05:
+            printNow("[%.2f%%]" % p, back=True)
+            last_p = p
+         c += 1
              
     newcount = len(newcb)
     for i in range(len(newcb)):
