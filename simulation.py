@@ -21,7 +21,7 @@ pHigh = 127*60
 massMin = 1000 #kg
 massMax = 10000 #kg
 
-CollideScale = 100 #scales likelyhood of collisions
+CollideScale = 100000 #scales likelyhood of collisions
 
 AverageMass = 100
 MinMass = 1
@@ -39,6 +39,71 @@ number_of_objects = 100
 
 outputfilename = "1.csv"
 filehandle = None
+
+bucketDim = 1000000
+spatialMap = None
+
+class SpatialMap:
+    dim = 0
+    buckets = {}
+    
+    def __init__(self, dim):
+        self.dim = dim
+    
+    def clearBuckets(self):
+        for hash in self.buckets:
+            self.buckets[hash] = []
+    
+    # use a tuple as hash
+    def getHash(self, loc):
+        return (math.floor(loc[0]/self.dim), math.floor(loc[1]/self.dim), math.floor(loc[2]/self.dim))
+        
+    def addToBuckets(self, co):
+        loc = co.getXYZ()
+        global CollideScale
+        r = co.getScale() * (CollideScale)
+        hashes = []
+        
+        def conditionalAppend(hash):
+            if hash not in hashes:
+                hashes.append(hash)
+        
+        minP = (loc[0]-r, loc[1]-r, loc[2]-r)
+        maxP = (loc[0]+r, loc[1]+r, loc[2]+r)
+        
+        min, max = self.getHash(minP), self.getHash(maxP)
+        #printNow(r)
+        #printNow(min)
+        #printNow(max)
+        
+        for i in range(min[0], max[0]+1):
+            for j in range(min[1], max[1]+1):
+                for k in range(min[2], max[2]+1):
+                    self.buckets.setdefault( (i, j, k), [] ).append(co)
+                    #printNow(len(self.buckets[(i,j,k)]))
+                    
+        #printNow(self.buckets)
+        
+    def getBuckets(self, co):
+        ret = []
+        loc = co.getXYZ()
+        global CollideScale
+        r = co.getScale() * (CollideScale)
+        minP = (loc[0]-r, loc[1]-r, loc[2]-r)
+        maxP = (loc[0]+r, loc[1]+r, loc[2]+r)
+        
+        min, max = self.getHash(minP), self.getHash(maxP)
+        
+        for i in range(min[0], max[0]+1):
+            for j in range(min[1], max[1]+1):
+                for k in range(min[2], max[2]+1):
+                    if (i,j,k) in self.buckets:
+                        ret.append(self.buckets[(i, j, k)])
+                    else:
+                        sys.stderr.write("Bucket not found!")
+                        sys.stderr.flush()
+        #printNow(len(ret))
+        return ret
 
 def printNow(string, back=False):
     if back:
@@ -264,7 +329,7 @@ class CollisionObject:
         
     def spawn(self, loc, mass, velocity, envisat):
         self.spawned = True
-        self.immune = 10
+        self.immune = 0
         
         if envisat:
             self.createOrbitEnvisat()
@@ -315,21 +380,24 @@ class CollisionObject:
         if self.hidden:
             return
         if self.immune > 0:
-            self.immune -= 1
-            
-       
+            self.immune -= 1      
 
-        self.t = self.t+DT
+        self.t = self.t + DT
 
         self.getCartLoc()
+        global spatialMap
+        spatialMap.addToBuckets(self)
         
 newcb = []
 def checkCollision(a, b, frame):
-    assert a != b
+    if a == b:
+        return
     if a.hidden or b.hidden or a.immune > 0 or b.immune > 0:
         return False
         
     global newcb
+    
+    #printNow("compare")
     
     r1 = a.getXYZ()
     r2 = b.getXYZ()
@@ -342,15 +410,17 @@ def checkCollision(a, b, frame):
     y2 = r2[1]
     z2 = r2[2]
     
-    d = min(abs(x2-x1),abs(y2-y1),abs(z2-z1))
+    #d = min(abs(x2-x1),abs(y2-y1),abs(z2-z1))
 
+    d = math.sqrt((x2-x1)**2+(y2-y1)**2+(z2-z1)**2)
+    
     s1 = a.getScale()
     s2 = b.getScale()
     
     if s1 is None or s2 is None:
         return False
     
-    s = CollideScale*(s1+s2)/2
+    s = CollideScale*(s1+s2)
     if d < s:
         #print("boom")
         
@@ -374,22 +444,6 @@ def checkCollision(a, b, frame):
     
         m1 = a.getMass() 
         m2 = b.getMass()
-        
-       
-    elif a.envisat and a.t > breakupTime:
-        #print("bam")
-        v1 = a.vel
-
-        vx1 = v1[0]
-        vy1 = v1[1]
-        vz1 = v1[2]
-        
-        vx2 = 0
-        vy2 = 0
-        vz2 = 0
-        
-        m1 = a.getMass() 
-        m2 = 0
         
     else: 
         return False
@@ -446,6 +500,82 @@ def checkCollision(a, b, frame):
 
     return True
     
+def checkBreakup(a):
+    if a.hidden:
+        return False
+    if not a.envisat or a.t < breakupTime:
+        return False
+        
+    v1 = a.vel
+
+    vx1 = v1[0]
+    vy1 = v1[1]
+    vz1 = v1[2]
+    
+    vx2 = 0
+    vy2 = 0
+    vz2 = 0
+    
+    m1 = a.getMass() 
+    m2 = 0
+    
+    r1 = a.getXYZ()
+        
+    x1 = r1[0]
+    y1 = r1[1]
+    z1 = r1[2]
+    
+    a.hide()
+    
+    Mtot = m1
+        
+    pxTot = vx1*m1 
+    pyTot = vy1*m1 
+    pzTot = vz1*m1 
+        
+    N = round(Mtot/AverageMass)
+    #print(N)
+    Mtot2 = 0
+    
+    pxTot2 = 0
+    pyTot2 = 0
+    pzTot2 = 0
+    
+    ms = []
+    vxs = []
+    vys = []
+    vzs = []
+    
+    
+    for i in range(0,N-1):
+        ms.append(random.gauss(AverageMass,AverageMass/4))
+        if(ms[i] < MinMass):
+            ms[i] = MinMass
+        vxs.append(random.gauss((vx1)/N,(vx1)/(4*N)))
+        vys.append(random.gauss((vy1)/N,(vy1)/(4*N)))
+        vzs.append(random.gauss((vz1)/N,(vz1)/(4*N)))
+        
+    for i in range(0,N-1):
+        Mtot2  += ms[i]
+        
+    for i in range(0,N-1):
+        ms[i]  *= Mtot/Mtot2
+        
+    for i in range(0,N-1):
+        pxTot2 += vxs[i]*ms[i]
+        pyTot2 += vys[i]*ms[i]
+        pzTot2 += vzs[i]*ms[i] 
+    
+    for i in range(0,N-1):
+        vxs[i] *= pxTot/(pxTot2)
+        vys[i] *= pyTot/(pyTot2)
+        vzs[i] *= pzTot/(pxTot2)
+
+        obj = CollisionObject(((x1),(y1),(z1)), ms[i], (vxs[i], vys[i], vzs[i]))
+        
+        newcb.append(obj)
+    
+    return True
 
 def strTime():
     return time.strftime("%y/%m/%d %H:%m:%S")
@@ -477,7 +607,8 @@ def closeFile():
             filehandle = None
         except Exception as e:
             print(str(e))
-            
+
+last_hidden = 0  
 def next_frame():
     global current_frame
     global end_frame
@@ -486,40 +617,61 @@ def next_frame():
     
     if current_frame == end_frame:
         return
-        
+    
+    global spatialMap
+    spatialMap.clearBuckets()
+    
     for i in range(len(cb)):
         cb[i].tick()
         
-    # very inefficient N^N collision checking
-    # print(len(cb))
-    tot = sum(range(len(cb)))
-    c = 0
+
     last_p = 0
     newcb = []
     start = time.clock()
     ccount = 0
-    for i in range(len(cb)):
-       for k in range(i+1, len(cb)):
-         if checkCollision(cb[i], cb[k], current_frame):
-            ccount += 1
-         p = 100.*c/tot
-         if p > last_p + .05:
+    bcount = 0
+    i = 0
+    for A in cb:
+        buckets = spatialMap.getBuckets(A)
+        #printNow(len(buckets))
+        #printNow(buckets)
+        checked = []
+        for bucket in buckets:
+            for B in bucket:
+                if B in checked:
+                    continue
+                checked.append(B)
+                if (checkCollision(A, B, current_frame)):
+                    ccount += 1        
+        if checkBreakup(A):
+            bcount += 1
+        p = 100.*i/len(cb)
+        if p > last_p + 0.05:
             printNow("[%.2f%%]" % p, back=True)
             last_p = p
-         c += 1
+        i += 1
              
+    printNow("[100.00%]", back=True)
     newcount = len(newcb)
     for i in range(len(newcb)):
         cb.append(newcb[i])
     
+    global last_hidden
+    hidden = 0
     sizes = []
     for i in range(len(cb)):
         if not cb[i].hidden:
             sizes.append(str(cb[i].getScale()))
+        else:
+            hidden += 1
+    
+    new_hidden = hidden - last_hidden - (ccount*2)
+    last_hidden = hidden
            
-    fileWrite("%d, %d, %s" % (current_frame, len(sizes), ' ,'.join(sizes)))
+    fileWrite("%f, %d, %d, %d, %s" % (current_frame * DT, len(sizes), ccount, bcount, ' ,'.join(sizes)))
     end = time.clock()
-    printNow("Done frame: %d. Num: %d. Collisions: %d. New: %d.  (%ds)" % (current_frame, len(sizes), ccount, newcount, round((end-start))))
+    pignored = 100.*new_hidden/newcount 
+    printNow("Done step: %d (%.2fs). Num: %d. Collisions: %d. Breakups: %d. New: %d, of which %d were ignored [%.1f%%] (%ds)" % (current_frame, current_frame*DT, len(sizes), ccount, bcount, newcount, new_hidden, pignored, round(end-start)))
     current_frame += 1
     next_frame()
 
@@ -539,7 +691,7 @@ def start():
     fileWrite("# [%s] Started simulation of %d objects" % (strTime(), number_of_objects))
     fileWrite("# AverageMass: %f" % AverageMass)
     fileWrite("# CollideScale: %f" % CollideScale)
-    fileWrite("# time(frame), num of objects, sizes of objects ...")
+    fileWrite("# time (s), tot#objects, #collisions, #breakups, sizes of objects ...")
     
     global cb
     for i in range(number_of_objects):
@@ -549,6 +701,10 @@ def start():
     if(startBreakup):
         obj = CollisionObject(envisat=True)
         cb.append(obj)
+    
+    global spatialMap
+    global bucketDim
+    spatialMap = SpatialMap(bucketDim)
     
     next_frame()
     closeFile()
@@ -573,6 +729,7 @@ parser.add_argument("--num", "-N", "-n", type=int, default=number_of_objects, he
 parser.add_argument("--out", "-o", default=outputfilename, help="File to output csv data to", required=True)
 parser.add_argument("--timestep", "-t", type=float, default=DT, help="Timestep (s)")
 parser.add_argument("--end", "--steps", "-e", type=int, default=end_frame, help="Number of time steps to simulate", required=True)
+parser.add_argument("--dim", "-D", type=float, default=bucketDim, help="Dimension of spatial segmentation")
 args = parser.parse_args()    
 
 massMin = args.massMin
@@ -587,6 +744,7 @@ number_of_objects = args.num
 end_frame = args.end
 outputfilename = args.out
 DT = args.timestep
+bucketDim = args.dim
 
 
 start()
