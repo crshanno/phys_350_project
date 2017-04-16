@@ -78,12 +78,12 @@ function testN {
 
 # configure simulations here
 
-testN 20 200 500 1000 2000 5000 10000
-# simultaneously runs 5, 200 frame simulations with avgN=20 and n=5000,1000,2000,5000,10000
+testN 10 200 500 1000 2000 5000 10000
+# simultaneously runs 5, 200 frame simulations with avgN=10 and n=500,1000,2000,5000,10000
 
 
 # it will wait until those 5 simulations have all finished, then it will run
-testAvgN 2000 200 25 30
+testAvgN 2000 200 10 15 20 25 30 
 # this simultaneously runs 5, 200 frame simulations with n=2000 and avgN=10:5:30
 
 wait
