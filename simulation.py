@@ -21,7 +21,7 @@ pHigh = 127*60
 massMin = 1000 #kg
 massMax = 10000 #kg
 
-CollideScale = 100000 #scales likelyhood of collisions
+CollideScale = 10000 #scales likelyhood of collisions
 
 AverageMass = 100
 MinMass = 1
@@ -40,9 +40,14 @@ number_of_objects = 100
 outputfilename = "1.csv"
 filehandle = None
 
-bucketDim = 1000000
+bucketDim = 100000
 spatialMap = None
 
+avgN = 10
+minN = 3
+maxN = 15
+
+allArgs=""
 class SpatialMap:
     dim = 0
     buckets = {}
@@ -63,10 +68,6 @@ class SpatialMap:
         global CollideScale
         r = co.getScale() * (CollideScale)
         hashes = []
-        
-        def conditionalAppend(hash):
-            if hash not in hashes:
-                hashes.append(hash)
         
         minP = (loc[0]-r, loc[1]-r, loc[2]-r)
         maxP = (loc[0]+r, loc[1]+r, loc[2]+r)
@@ -102,6 +103,7 @@ class SpatialMap:
                     else:
                         sys.stderr.write("Bucket not found!")
                         sys.stderr.flush()
+                        assert False
         #printNow(len(ret))
         return ret
 
@@ -227,6 +229,7 @@ class CollisionObject:
         if(self.e > 0.9):
             self.despawn()
             return
+            #self.e = 0.9
             
         rm = (math.sqrt(pow((G*Mearth),2) + 2*EperM*r2*v2)-G*Mearth)/(2*EperM)
 
@@ -234,6 +237,9 @@ class CollisionObject:
         
         self.P = math.sqrt(pow(self.a,3)*4*math.pi*math.pi/(G*Mearth)) #Orbital period
     
+        #if self.P < pLow or self.P > pHigh:
+        #    self.despawn()
+        #    return
     
         x = r[0]
         y = r[1]
@@ -457,7 +463,14 @@ def checkCollision(a, b, frame):
     pyTot = vy1*m1 + vy2*m2
     pzTot = vz1*m1 + vz2*m2
         
-    N = round(Mtot/AverageMass)
+        
+    # if N is 2, that causes levelling off.
+    N = round(random.gauss(avgN, avgN/4))
+    if N < minN:
+        N = minN
+    elif N > maxN:
+        N = maxN
+    
     #print(N)
     Mtot2 = 0
     
@@ -497,6 +510,10 @@ def checkCollision(a, b, frame):
         obj = CollisionObject(((x1+x2)/2,(y1+y2)/2,(z1+z2)/2), ms[i], (vxs[i], vys[i], vzs[i]))
         
         newcb.append(obj)
+        
+    if Mtot - sum(ms) > 0.01:
+        printNow("\n%s -> %s" %(Mtot, sum(ms)))
+        assert False
 
     return True
     
@@ -616,7 +633,7 @@ def next_frame():
     global cb    
     
     if current_frame == end_frame:
-        return
+        return False
     
     global spatialMap
     spatialMap.clearBuckets()
@@ -632,6 +649,8 @@ def next_frame():
     bcount = 0
     i = 0
     for A in cb:
+        if A.hidden:
+            continue
         buckets = spatialMap.getBuckets(A)
         #printNow(len(buckets))
         #printNow(buckets)
@@ -661,7 +680,8 @@ def next_frame():
     sizes = []
     for i in range(len(cb)):
         if not cb[i].hidden:
-            sizes.append(str(cb[i].getScale()))
+#            sizes.append(str(cb[i].getScale()))
+             sizes.append(str(cb[i].getMass()))
         else:
             hidden += 1
     
@@ -670,11 +690,19 @@ def next_frame():
            
     fileWrite("%f, %d, %d, %d, %s" % (current_frame * DT, len(sizes), ccount, bcount, ' ,'.join(sizes)))
     end = time.clock()
-    pignored = 100.*new_hidden/newcount 
+    if newcount > 0:
+        pignored = 100.*new_hidden/newcount 
+    else:
+        pignored = 0.
     printNow("Done step: %d (%.2fs). Num: %d. Collisions: %d. Breakups: %d. New: %d, of which %d were ignored [%.1f%%] (%ds)" % (current_frame, current_frame*DT, len(sizes), ccount, bcount, newcount, new_hidden, pignored, round(end-start)))
     current_frame += 1
-    next_frame()
+    return True
 
+def _start():
+    res = True
+    while res:
+        res = next_frame() 
+       
     
 def start():
     global outputfilename
@@ -691,7 +719,9 @@ def start():
     fileWrite("# [%s] Started simulation of %d objects" % (strTime(), number_of_objects))
     fileWrite("# AverageMass: %f" % AverageMass)
     fileWrite("# CollideScale: %f" % CollideScale)
-    fileWrite("# time (s), tot#objects, #collisions, #breakups, sizes of objects ...")
+    fileWrite("# Density: %f" % Density)
+    fileWrite("# time (s), tot#objects, #collisions, #breakups, masses (kg) ...")
+    fileWrite("# %s" % allArgs)
     
     global cb
     for i in range(number_of_objects):
@@ -706,7 +736,7 @@ def start():
     global bucketDim
     spatialMap = SpatialMap(bucketDim)
     
-    next_frame()
+    _start()
     closeFile()
 
 class HelpOnErrorParser(argparse.ArgumentParser):
@@ -717,11 +747,11 @@ class HelpOnErrorParser(argparse.ArgumentParser):
     
 parser = HelpOnErrorParser(description="Kessler Syndrome Simulation.", 
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument("--massMin", "-m", type=float, default=massMin, help="Minimum mass (kg)")
-parser.add_argument("--massMax", "-M", type=float, default=massMax, help="Maximum mass (kg)")
+parser.add_argument("--massMin", "-m", type=float, default=massMin, help="Minimum mass (initial generation) (kg)")
+parser.add_argument("--massMax", "-M", type=float, default=massMax, help="Maximum mass (initial generation) (kg)")
 parser.add_argument("--collideScale", "-C", type=float, default=CollideScale, help="Collide scale")
 parser.add_argument("--averageMass", "-A", type=float, default=AverageMass, help="Average mass (kg)")
-parser.add_argument("--minMass", "-mm", type=float, default=MinMass, help="Minimum mass (kg)")
+parser.add_argument("--minMass", "-i", type=float, default=MinMass, help="Minimum mass (after collision) (kg)")
 parser.add_argument("--density", "-d", type=float, default=Density, help="Density (kg/m^3)")
 parser.add_argument("--breakup", "-b", type=bool, default=startBreakup, help="Use breakup")
 parser.add_argument("--breakupTime", "-B", type=float, default=breakupTime, help="Breakup time (s)")
@@ -730,6 +760,9 @@ parser.add_argument("--out", "-o", default=outputfilename, help="File to output 
 parser.add_argument("--timestep", "-t", type=float, default=DT, help="Timestep (s)")
 parser.add_argument("--end", "--steps", "-e", type=int, default=end_frame, help="Number of time steps to simulate", required=True)
 parser.add_argument("--dim", "-D", type=float, default=bucketDim, help="Dimension of spatial segmentation")
+parser.add_argument("--avgN", "-a", type=int, default=avgN, help="Average number of objects to create after a collision")
+parser.add_argument("--minN", "-j", type=int, default=minN, help="Minimum number of objects to create after a collision")
+parser.add_argument("--maxN", "-k", type=int, default=maxN, help="Maximum number of objects to create after a collision")
 args = parser.parse_args()    
 
 massMin = args.massMin
@@ -745,7 +778,10 @@ end_frame = args.end
 outputfilename = args.out
 DT = args.timestep
 bucketDim = args.dim
-
+avgN = args.avgN
+minN = args.minN
+maxN = args.maxN
+allArgs = str(args)
 
 start()
 
