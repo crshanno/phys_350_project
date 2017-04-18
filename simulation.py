@@ -4,6 +4,11 @@ import time
 import os
 import sys
 import argparse
+import numpy as np
+
+
+#Use collision interpolation (check for collision between time steps)
+useinterp = True
 
 random.seed(time.time())
 
@@ -123,6 +128,7 @@ class CollisionObject:
     object = None
     vel = (0, 0, 0)
     loc = (0, 0, 0)
+    lastloc = (0, 0, 0)
     spawned = False
     hidden = False    
     immune = 0
@@ -328,7 +334,8 @@ class CollisionObject:
         x = self.X[0]*x0 + self.Y[0]*y0
         y = self.X[1]*x0 + self.Y[1]*y0
         z = self.X[2]*x0 + self.Y[2]*y0
-        
+
+        self.lastloc = self.loc
         self.loc = (x,y,z)
         
         # print("out",math.sqrt(pow(vx,2) + pow(vy,2) + pow(vz,2)),math.sqrt(pow(x,2) + pow(y,2) + pow(z,2)))
@@ -370,6 +377,10 @@ class CollisionObject:
         
     def getXYZ(self):
         loc = self.loc
+        return loc
+    
+    def getlastXYZ(self):
+        loc = self.lastloc
         return loc
         
     def getScale(self):
@@ -417,17 +428,88 @@ def checkCollision(a, b, frame):
     z2 = r2[2]
     
     #d = min(abs(x2-x1),abs(y2-y1),abs(z2-z1))
+    if useinterp:
+        ##get the last locations
+        r10 = a.getlastXYZ()
+        r20 = b.getlastXYZ()
 
-    d = math.sqrt((x2-x1)**2+(y2-y1)**2+(z2-z1)**2)
+        ##create the line definitions
+        #theses are the base point
+        l10 = np.array([r10[0], r10[1], r10[2]])
+        l20 = np.array([r20[0], r20[1], r20[2]])
+        
+        #these are the direction vectors
+        l1 = np.array([r1[0]-r10[0], r1[1]-r10[1], r1[2]-r10[2]])
+        l2 = np.array([r2[0]-r20[0], r2[1]-r20[1], r2[2]-r20[2]])
+
+        #create an arra for utility
+        util = np.array([0,0,1])
+
+
+        #put them all into a matrix as columns, this is used to create the shortest distance vector
+        line = np.hstack((l1.T,-l2.T,l10.T-l20.T))
+
+        #put the directions into a matrix as rows, this is used to check perpendicular
+        perp = np.vstack((l1,l2,util))
+
+        #this solves for how far along each line the nearest point is
+        ab = np.linalg.solve(np.dot(perp, line) , util.T)
+
+        a = ab[0]
+        b = ab[1]
+
+        #these should be between 1 and 0 as that is the line segment we are checking
+
+        a = min(max(0,a),1)
+        b = min(max(0,b),1)
+
+        #turn these into points
+        p = l10 + a*l1
+        q = l20 + b*l2
+
+        #get the distance between them
+        d = np.numpy.linalg.norm(p-q)        
+        
+        s1 = a.getScale()
+        s2 = b.getScale()
+        
+        if s1 is None or s2 is None:
+            return False
+        s = CollideScale*(s1+s2)
+
+        #this is to check if the closest points are within the radius sum
+        if d < s: #do the more detailed checking
+            #get the lengths of the two lines
+            length1 = np.numpy.linalg.norm(l1)
+            length2 = np.numpy.linalg.norm(l2)
+
+            #take the average
+            lave = (length1 +  length2)/2
+
+            
+            #this is to check if the objects were there at the same time. This is approximate, and is most accurate for similar orbits.
+            if abs(a-b) < (s/lavg *(1 - d/s)): #if s=d, a=b req'd. if d=0, |a-b| < s/lavg
+                collision = True
+            else:
+                collision = False
+
+
+        else:
+            collision = False
+
+
+    else:
+        d = math.sqrt((x2-x1)**2+(y2-y1)**2+(z2-z1)**2)
+        
+        s1 = a.getScale()
+        s2 = b.getScale()
+        
+        if s1 is None or s2 is None:
+            return False
+        s = CollideScale*(s1+s2)
+        collision = d < s
     
-    s1 = a.getScale()
-    s2 = b.getScale()
-    
-    if s1 is None or s2 is None:
-        return False
-    
-    s = CollideScale*(s1+s2)
-    if d < s:
+    if collision:
         #print("boom")
         
         # print(r1,v1)
